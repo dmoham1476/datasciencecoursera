@@ -1,0 +1,88 @@
+---
+title: "Practical Machine learning Project"
+author: "Deepa Mohan"
+date: "May 13, 2017"
+output: html_document
+---
+
+```{r include=FALSE, cache=FALSE}
+library('caret')
+library('randomForest')
+```
+
+#Exploratory Data Analysis
+#Load the data
+#Look at the training data and test data
+So, let us first load our data, and check out the first few lines of the training set using the `head` command.
+```{r}
+pml.training <- read.csv("./pml-training.csv", na.strings=c('NA', '', ' '))
+pml.test <- read.csv("./pml-testing.csv", na.strings=c('NA', '', ' '))
+
+
+head(pml.training)
+```
+
+Looking at our data there are multiple columns that are full of `NA`s. By inspecting more of the data, we see that the columns that have mostly `NA`s have only data when the `new_window` variable is `'yes'`. Also, judging by the variable names, some of the columns clearly represent aggregates such as `avg`, `std` and `var`. Example column names include `avg_roll_dumbbell`, `stddev_roll_dumbbell` and `var_roll_dumbbell`. Reading a bit on the provided [webpage](http://groupware.les.inf.puc-rio.br/har) and related papers, it is clear that the data is collected in rolling, overlapping time windows, and that the rows with `new_window = 'yes` holds the aggregates of either the preceeding or following rows. We face a choice of either keeping the data points where `new_window = 'yes'`, and train our machine learning model on what seems to be summary of a full motion, or omit these rows and train using the rawer data. Seeing as there are only `406` rows of data with `new_window` equal to `'yes'`, we will use the other set. 
+
+```{r}
+pml.training <- pml.training[pml.training$new_window == 'no', ]
+```
+#Feature Selection
+From the `head` command above we saw that there are a range of columns that are full of `NA`s. Let's delete the columns that have no data and check how many variables that leaves us with.
+```{r}
+notAllNAs <- colSums(is.na(pml.training)) != nrow(pml.training)
+pml.training <- pml.training[, notAllNAs]
+pml.test <- pml.test[, notAllNAs]
+dim(pml.training)
+```
+60! Alright, we just deleted 100 columns. Wow! Now, let's explore some of the remaining variables. 
+```{r}
+plot(pml.training$X)
+```
+X is clearly just the index of of the samples. The column `num_window` has a cyclic relationship with `classe`, as seen in the following plot.
+
+```{r}
+plot(pml.training$num_window, pml.training$classe)
+```
+
+We'll add that, along with `user_name` and `new_window`, which is all 'no' now, and all timestamp fields to the variables that we will delete.
+
+```{r}
+pml.training$X <- NULL
+pml.training$user_name <- NULL
+pml.training$raw_timestamp_part_1 <- NULL
+pml.training$raw_timestamp_part_2 <- NULL
+pml.training$cvtd_timestamp <- NULL
+pml.training$num_window <- NULL
+pml.training$new_window <- NULL
+```
+We'll have to do it for our test set as well.
+```{r}
+pml.test$X <- NULL
+pml.test$user_name <- NULL
+pml.test$raw_timestamp_part_1 <- NULL
+pml.test$raw_timestamp_part_2 <- NULL
+pml.test$cvtd_timestamp <- NULL
+pml.test$num_window <- NULL
+pml.test$new_window <- NULL
+```
+#Build and train the prediction model
+We now have 54 columns, and are ready to train a machine learning model. Seeing as we've recently learned about Random Forests', we will traing a Random Forest! By using a Random Forest we do not need to cross validate while training, as the Random Forest inherintly does something [similar](https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm), by random sampling data for each tree it makes.
+
+
+```{r}
+fit <- randomForest(classe ~ ., data=pml.training)
+fit
+```
+
+As we can see above, we've made 500 trees with 7 variables tried at each split. The out of bag error rate is 0.28% which is insane, and probably points towards some sort of overfitting. We can have a look at variable importance
+```{r}
+varImpPlot(fit, n.var=10)
+```
+Clearly the `roll_belt` and `yaw_belt` variabels are the most important. Anways, let's just do some predictions on the test set, and submit our answers.
+
+```{r}
+predictions <- predict(fit, newdata=pml.test)
+predictions
+```
+
